@@ -1,4 +1,4 @@
-Name: Sync Upstream, Build & Release APK
+name: Sync Upstream, Build & Release APK
 
 on:
   schedule:
