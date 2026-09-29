@@ -61,7 +61,7 @@ jobs:
           echo "APK_NAME=${APP_NAME}_v${CLEAN_VERSION}.apk" >> $GITHUB_ENV
           
           echo "解析结果: 版本号=v$CLEAN_VERSION, APK文件名=${APP_NAME}_v${CLEAN_VERSION}.apk"
-	  
+ 
       # 4. 设置 Java 环境
       - name: Set up Java
         uses: actions/setup-java@v5
