@@ -1,4 +1,4 @@
-name: Sync Upstream, Build & Release APK
+Name: Sync Upstream, Build & Release APK
 
 on:
   schedule:
@@ -61,7 +61,7 @@ jobs:
           echo "APK_NAME=${APP_NAME}_v${CLEAN_VERSION}.apk" >> $GITHUB_ENV
           
           echo "解析结果: 版本号=v$CLEAN_VERSION, APK文件名=${APP_NAME}_v${CLEAN_VERSION}.apk"
- 
+
       # 4. 设置 Java 环境
       - name: Set up Java
         uses: actions/setup-java@v5
@@ -80,9 +80,24 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
-      # 7. 编译 release APK
+      # ================= 【新增】7.1 解密 Base64 签名库并还原为文件 =================
+      - name: Decode Android Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/release.jks
+
+      # ================= 【修改】7.2 带签名环境变量编译 release APK =================
       - name: Build APK
         run: flutter build apk --release
+        env:
+          KEYSTORE_FILE_PATH: ${{ github.workspace }}/android/app/release.jks
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+
+      # ================= 【新增】7.3 编译完成后立即清理密钥文件 =================
+      - name: Clean up Keystore
+        if: always()
+        run: rm -f android/app/release.jks
 
       # 8. 将 APK 重命名为带原项目版本号的文件名
       - name: Prepare APK File
