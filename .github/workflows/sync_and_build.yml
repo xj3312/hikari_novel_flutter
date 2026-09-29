@@ -69,11 +69,11 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # 5. 安装并配置 Flutter 环境
+      # 5. 安装并配置原项目兼容的 Flutter 环境
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
+          flutter-version: '3.12.2' # 锁定版本，避免 stable 自动升到最新的破坏性版本
           cache: true
 
       # 6. 获取 Flutter 依赖
