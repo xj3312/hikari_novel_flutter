@@ -79,10 +79,12 @@ jobs:
 
       # 7. 配置 Android 签名证书 (解析 Secrets 并生成配置文件)
       - name: Configure Android Signing Credentials
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        if: ${{ env.KEYSTORE_BASE64 != '' }}
         run: |
           # 1. 解码 Base64 KeyStore 文件到 android/app/upload-keystore.jks
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
 
           # 2. 生成 android/key.properties 供 Gradle 自动读取
           cat <<EOF > android/key.properties
