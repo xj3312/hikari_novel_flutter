@@ -1,151 +1,45 @@
-Name: Sync Upstream, Build & Release APK
+plugins {
+    id("com.android.application")
+    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    id("dev.flutter.flutter-gradle-plugin")
+}
 
-on:
-  schedule:
-    # 每天 UTC 时间 20:00 (北京时间凌晨 04:00) 自动检查并同步原项目更新
-    - cron: '0 20 * * *'
-  push:
-    branches: [ "main", "master" ] # 当有代码 Push 或手动修改时触发
-  workflow_dispatch: # 支持在 Actions 页面手动点击按钮随时触发
+android {
+    namespace = "pers.cyh128.hikari_novel"
+    compileSdk = flutter.compileSdkVersion
+    ndkVersion = flutter.ndkVersion
 
-jobs:
-  sync-and-build:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write # 赋予推送代码与创建/修改 Release 的写权限
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
 
-    steps:
-      # 1. 拉取当前 Fork 仓库代码
-      - name: Checkout Code
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+    defaultConfig {
+        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
+        applicationId = "pers.cyh128.hikari_novel"
+        // You can update the following values to match your application needs.
+        // For more information, see: https://flutter.dev/to/review-gradle-config.
+        minSdk = flutter.minSdkVersion
+        targetSdk = flutter.targetSdkVersion
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+    }
 
-      # 2. 拉取并合并 upstream（原项目 15dd/hikari_novel_flutter）的最新代码
-      - name: Sync Upstream Changes
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]"
-          
-          # 添加原项目为 upstream 远程仓库
-          git remote add upstream https://github.com/15dd/hikari_novel_flutter.git || true
-          git fetch upstream
-          
-          # 切换并合并原项目的 main/master 分支
-          UPSTREAM_BRANCH="main"
-          git checkout $UPSTREAM_BRANCH || git checkout master
-          
-          if git merge upstream/$UPSTREAM_BRANCH --no-edit; then
-            echo "成功合并原项目最新代码！"
-            git push origin HEAD:$UPSTREAM_BRANCH || true
-          else
-            echo "自动合并存在冲突，尝试以原项目代码为准强制同步..."
-            git reset --hard upstream/$UPSTREAM_BRANCH
-            git push origin HEAD:$UPSTREAM_BRANCH --force
-          fi
+    buildTypes {
+        release {
+            // TODO: Add your own signing config for the release build.
+            // Signing with the debug keys for now, so `flutter run --release` works.
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+}
 
-      # 3. 从 pubspec.yaml 自动解析原项目名称与最新版本号
-      - name: Extract App Version
-        id: get_version
-        run: |
-          RAW_VERSION=$(grep 'version:' pubspec.yaml | sed 's/version: //g' | tr -d ' "\r\n')
-          CLEAN_VERSION=$(echo "$RAW_VERSION" | cut -d '+' -f 1)
-          APP_NAME=$(grep 'name:' pubspec.yaml | head -n 1 | sed 's/name: //g' | tr -d ' "\r\n')
-          
-          echo "APP_VERSION=v$CLEAN_VERSION" >> $GITHUB_ENV
-          echo "FULL_VERSION=v$RAW_VERSION" >> $GITHUB_ENV
-          echo "APK_NAME=${APP_NAME}_v${CLEAN_VERSION}.apk" >> $GITHUB_ENV
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
 
-      # 4. 设置 Java 环境
-      - name: Set up Java
-        uses: actions/setup-java@v5
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      # 5. 安装并配置 Flutter 环境
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-          cache: true
-
-      # 6. 获取 Flutter 依赖
-      - name: Install Dependencies
-        run: flutter pub get
-
-      # 7.1 解密 Base64 签名库并还原为文件
-      - name: Decode Android Keystore
-        run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/release.jks
-
-      # ================= 【核心：动态注入签名配置】 =================
-      - name: Inject Signing Config to build.gradle.kts
-        run: |
-          python3 -c '
-          path = "android/app/build.gradle.kts"
-          with open(path, "r") as f:
-              content = f.read()
-
-          # 1. 构造要注入的 signingConfigs 逻辑
-          signing_code = """
-              signingConfigs {
-                  create("release") {
-                      storeFile = file("${{ github.workspace }}/android/app/release.jks")
-                      storePassword = "${{ secrets.RELEASE_STORE_PASSWORD }}"
-                      keyAlias = "${{ secrets.RELEASE_KEY_ALIAS }}"
-                      keyPassword = "${{ secrets.RELEASE_KEY_PASSWORD }}"
-                  }
-              }
-          """
-
-          # 2. 将在 android { 节点下添加 signingConfigs
-          if "signingConfigs {" not in content:
-              content = content.replace("android {", "android {\n" + signing_code)
-
-          # 3. 将 release 构建绑定的 signingConfig 替换为刚创建的 release 签名配置
-          content = content.replace(
-              "signingConfig = signingConfigs.getByName(\"debug\")",
-              "signingConfig = signingConfigs.getByName(\"release\")"
-          )
-
-          with open(path, "w") as f:
-              f.write(content)
-          '
-          echo "build.gradle.kts 签名注入完成！"
-
-      # 7.2 编译 release APK
-      - name: Build APK
-        run: flutter build apk --release
-
-      # 7.3 编译完成后恢复 build.gradle.kts 并清理密钥（确保源码仓库不受影响）
-      - name: Clean up Keystore & Reset build.gradle.kts
-        if: always()
-        run: |
-          rm -f android/app/release.jks
-          git checkout android/app/build.gradle.kts || true
-
-      # 8. 将 APK 重命名为带原项目版本号的文件名
-      - name: Prepare APK File
-        run: |
-          mkdir -p output_apk
-          cp build/app/outputs/flutter-apk/app-release.apk "output_apk/${{ env.APK_NAME }}"
-
-      # 9. 自动发布到 GitHub Releases 页面
-      - name: Create Release and Upload APK
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ env.APP_VERSION }}
-          name: "Hikari Novel ${{ env.APP_VERSION }}"
-          body: |
-            这是系统自动同步原项目并编译发布的 Release 版本。
-            - 原项目版本号: `${{ env.FULL_VERSION }}`
-            - 同步时间: $(date +'%Y-%m-%d %H:%M:%S UTC')
-            - 对应 Commit: ${{ github.sha }}
-          draft: false
-          prerelease: false
-          files: |
-            output_apk/${{ env.APK_NAME }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+flutter {
+    source = "../.."
+}
