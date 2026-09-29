@@ -12,12 +12,12 @@ jobs:
   sync-and-build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # 赋予推送代码与创建 Release 的写权限
+      contents: write # 赋予推送代码与创建/修改 Release 的写权限
 
     steps:
-      # 1. 拉取当前 Fork 仓库代码
+      # 1. 拉取当前 Fork 仓库代码 (使用支持 Node.js 24 的 v5)
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -26,13 +26,13 @@ jobs:
       - name: Sync Upstream Changes
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.email "github-actions[bot]"
           
           # 添加原项目为 upstream 远程仓库
           git remote add upstream https://github.com/15dd/hikari_novel_flutter.git || true
           git fetch upstream
           
-          # 尝试合并原项目的 main/master 分支
+          # 切换并合并原项目的 main/master 分支
           UPSTREAM_BRANCH="main"
           git checkout $UPSTREAM_BRANCH || git checkout master
           
@@ -61,10 +61,10 @@ jobs:
           echo "APK_NAME=${APP_NAME}_v${CLEAN_VERSION}.apk" >> $GITHUB_ENV
           
           echo "解析结果: 版本号=v$CLEAN_VERSION, APK文件名=${APP_NAME}_v${CLEAN_VERSION}.apk"
-
-      # 4. 设置 Java 环境（Flutter Android 编译需要 JDK 17）
+		  
+      # 4. 设置 Java 环境
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -92,7 +92,7 @@ jobs:
 
       # 9. 自动发布到 GitHub Releases 页面
       - name: Create Release and Upload APK
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.APP_VERSION }} # 标签自动设为版本号，如 v1.0.0
           name: "Hikari Novel ${{ env.APP_VERSION }}"
