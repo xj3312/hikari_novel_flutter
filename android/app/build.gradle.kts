@@ -25,11 +25,35 @@ android {
         versionName = flutter.versionName
     }
 
+    // ================= 【1. 新增签名配置】 =================
+    signingConfigs {
+        create("release") {
+            // 读取 GitHub Actions 传入的环境变量
+            val keystorePath = System.getenv("KEYSTORE_FILE_PATH")
+            val storePasswordEnv = System.getenv("RELEASE_STORE_PASSWORD")
+            val keyAliasEnv = System.getenv("RELEASE_KEY_ALIAS")
+            val keyPasswordEnv = System.getenv("RELEASE_KEY_PASSWORD")
+
+            // 只有当签名文件和环境变量同时存在时才配置签名，否则降级使用默认设置
+            if (!keystorePath.isNullOrEmpty() && file(keystorePath).exists()) {
+                storeFile = file(keystorePath)
+                storePassword = storePasswordEnv
+                keyAlias = keyAliasEnv
+                keyPassword = keyPasswordEnv
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // ================= 【2. 修改此处绑定】 =================
+            // 判断是否成功加载了 release 签名配置，加载成功则使用 release，否则保留 debug 签名
+            val releaseConfig = signingConfigs.getByName("release")
+            signingConfig = if (releaseConfig.storeFile != null) {
+                releaseConfig
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }
