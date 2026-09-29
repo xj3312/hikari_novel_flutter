@@ -80,17 +80,15 @@ jobs:
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/release.jks
 
-      # ================= 【稳健版】动态注入签名配置 =================
+      # ================= 【修复版】动态注入签名配置 =================
       - name: Inject Signing Config to build.gradle.kts
         run: |
           python3 -c '
-          import re
-
           path = "android/app/build.gradle.kts"
           with open(path, "r") as f:
               content = f.read()
 
-          # 1. 构造签名节点代码
+          # 1. 构造要注入的 signingConfigs 逻辑
           signing_code = """
               signingConfigs {
                   create("release") {
@@ -102,21 +100,25 @@ jobs:
               }
           """
 
-          # 2. 注入 signingConfigs 到 android { 内部
+          # 2. 注入 signingConfigs 到 android { 节点下
           if "signingConfigs {" not in content:
-              content = re.sub(r"(android\s*\{)", r"\1\n" + signing_code, content, count=1)
+              content = content.replace("android {", "android {\n" + signing_code)
 
-          # 3. 将 debug 签名替换为 release 签名
-          content = re.sub(
-              r"signingConfig\s*=\s*signingConfigs\.getByName\([\"']debug[\"']\)",
-              "signingConfig = signingConfigs.getByName(\"release\")",
-              content
-          )
+          # 3. 将原项目的 debug 签名绑定替换为刚才创建的 release 签名
+          old_target = "signingConfig = signingConfigs.getByName(\"debug\")"
+          new_target = "signingConfig = signingConfigs.getByName(\"release\")"
+          
+          if old_target in content:
+              content = content.replace(old_target, new_target)
+          else:
+              # 保底机制：如果原项目没有该行，则在 release { 节点内强行注入
+              content = content.replace("release {", "release {\n            signingConfig = signingConfigs.getByName(\"release\")")
 
           with open(path, "w") as f:
               f.write(content)
           '
           echo "build.gradle.kts 签名注入完成！"
+
 
       # 7.2 编译 release APK
       - name: Build APK
