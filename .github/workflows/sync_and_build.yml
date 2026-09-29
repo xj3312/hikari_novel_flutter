@@ -15,7 +15,7 @@ jobs:
       contents: write # 赋予推送代码与创建/修改 Release 的写权限
 
     steps:
-      # 1. 拉取当前 Fork 仓库代码
+      # 1. 拉取当前 Fork 仓库代码 (使用支持 Node.js 24 的 v5)
       - name: Checkout Code
         uses: actions/checkout@v5
         with:
@@ -49,14 +49,19 @@ jobs:
       - name: Extract App Version
         id: get_version
         run: |
+          # 读取 pubspec.yaml 中的 version 字段 (例如 1.0.0+1)
           RAW_VERSION=$(grep 'version:' pubspec.yaml | sed 's/version: //g' | tr -d ' "\r\n')
+          # 提取纯版本号 (去除构建号 +1，得到 1.0.0)
           CLEAN_VERSION=$(echo "$RAW_VERSION" | cut -d '+' -f 1)
+          # 读取 pubspec.yaml 中的项目名称 (如 hikari_novel_flutter)
           APP_NAME=$(grep 'name:' pubspec.yaml | head -n 1 | sed 's/name: //g' | tr -d ' "\r\n')
           
           echo "APP_VERSION=v$CLEAN_VERSION" >> $GITHUB_ENV
           echo "FULL_VERSION=v$RAW_VERSION" >> $GITHUB_ENV
           echo "APK_NAME=${APP_NAME}_v${CLEAN_VERSION}.apk" >> $GITHUB_ENV
-
+          
+          echo "解析结果: 版本号=v$CLEAN_VERSION, APK文件名=${APP_NAME}_v${CLEAN_VERSION}.apk"
+ 
       # 4. 设置 Java 环境
       - name: Set up Java
         uses: actions/setup-java@v5
@@ -75,61 +80,9 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
-      # 7.1 解密 Base64 签名库并还原为文件
-      - name: Decode Android Keystore
-        run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/release.jks
-
-      # ================= 【修复版】动态注入签名配置 =================
-      - name: Inject Signing Config to build.gradle.kts
-        run: |
-          python3 -c '
-          path = "android/app/build.gradle.kts"
-          with open(path, "r") as f:
-              content = f.read()
-
-          # 1. 构造要注入的 signingConfigs 逻辑
-          signing_code = """
-              signingConfigs {
-                  create("release") {
-                      storeFile = file("${{ github.workspace }}/android/app/release.jks")
-                      storePassword = "${{ secrets.RELEASE_STORE_PASSWORD }}"
-                      keyAlias = "${{ secrets.RELEASE_KEY_ALIAS }}"
-                      keyPassword = "${{ secrets.RELEASE_KEY_PASSWORD }}"
-                  }
-              }
-          """
-
-          # 2. 注入 signingConfigs 到 android { 节点下
-          if "signingConfigs {" not in content:
-              content = content.replace("android {", "android {\n" + signing_code)
-
-          # 3. 将原项目的 debug 签名绑定替换为刚才创建的 release 签名
-          old_target = "signingConfig = signingConfigs.getByName(\"debug\")"
-          new_target = "signingConfig = signingConfigs.getByName(\"release\")"
-          
-          if old_target in content:
-              content = content.replace(old_target, new_target)
-          else:
-              # 保底机制：如果原项目没有该行，则在 release { 节点内强行注入
-              content = content.replace("release {", "release {\n            signingConfig = signingConfigs.getByName(\"release\")")
-
-          with open(path, "w") as f:
-              f.write(content)
-          '
-          echo "build.gradle.kts 签名注入完成！"
-
-
-      # 7.2 编译 release APK
+      # 7. 编译 release APK
       - name: Build APK
         run: flutter build apk --release
-
-      # 7.3 编译完成后恢复 build.gradle.kts 并清理密钥（确保源码仓库不受影响）
-      - name: Clean up Keystore & Reset build.gradle.kts
-        if: always()
-        run: |
-          rm -f android/app/release.jks
-          git checkout android/app/build.gradle.kts || true
 
       # 8. 将 APK 重命名为带原项目版本号的文件名
       - name: Prepare APK File
@@ -141,7 +94,7 @@ jobs:
       - name: Create Release and Upload APK
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ env.APP_VERSION }}
+          tag_name: ${{ env.APP_VERSION }} # 标签自动设为版本号，如 v1.0.0
           name: "Hikari Novel ${{ env.APP_VERSION }}"
           body: |
             这是系统自动同步原项目并编译发布的 Release 版本。
