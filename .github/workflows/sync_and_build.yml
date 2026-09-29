@@ -73,7 +73,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.12.2' # 锁定版本，避免 stable 自动升到最新的破坏性版本
+          flutter-version: '3.13.0' # 锁定版本，避免 stable 自动升到最新的破坏性版本
           cache: true
 
       # 6. 获取 Flutter 依赖
