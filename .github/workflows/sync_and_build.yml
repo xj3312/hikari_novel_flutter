@@ -80,15 +80,17 @@ jobs:
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/release.jks
 
-      # ================= 【核心：动态注入签名配置】 =================
+      # ================= 【稳健版】动态注入签名配置 =================
       - name: Inject Signing Config to build.gradle.kts
         run: |
           python3 -c '
+          import re
+
           path = "android/app/build.gradle.kts"
           with open(path, "r") as f:
               content = f.read()
 
-          # 1. 构造要注入的 signingConfigs 逻辑
+          # 1. 构造签名节点代码
           signing_code = """
               signingConfigs {
                   create("release") {
@@ -100,14 +102,15 @@ jobs:
               }
           """
 
-          # 2. 将在 android { 节点下添加 signingConfigs
+          # 2. 注入 signingConfigs 到 android { 内部
           if "signingConfigs {" not in content:
-              content = content.replace("android {", "android {\n" + signing_code)
+              content = re.sub(r"(android\s*\{)", r"\1\n" + signing_code, content, count=1)
 
-          # 3. 将 release 构建绑定的 signingConfig 替换为刚创建的 release 签名配置
-          content = content.replace(
-              "signingConfig = signingConfigs.getByName(\"debug\")",
-              "signingConfig = signingConfigs.getByName(\"release\")"
+          # 3. 将 debug 签名替换为 release 签名
+          content = re.sub(
+              r"signingConfig\s*=\s*signingConfigs\.getByName\([\"']debug[\"']\)",
+              "signingConfig = signingConfigs.getByName(\"release\")",
+              content
           )
 
           with open(path, "w") as f:
